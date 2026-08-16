@@ -1,0 +1,17 @@
+name: Failed Breakout
+category: failed_breakout
+direction: both
+source:
+  book: Trading Price Action Trading Ranges
+  chapter: Unverified
+  source_reference: Human verification required after local book ingestion
+definition: Candidate documentation for a breakout that fails and returns into prior structure.
+context: {}
+conditions: {}
+entry: {}
+stop: {}
+target: {}
+failure: []
+notes:
+  - Post-MVP pattern; no production detector is approved.
+status: candidate

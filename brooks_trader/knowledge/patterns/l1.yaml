@@ -1,0 +1,28 @@
+name: L1 Bear Flag
+category: first_entry
+direction: short
+source:
+  book: Trading Price Action Trends
+  chapter: Unverified
+  source_reference: Human verification required after local book ingestion
+definition: First downward attempt during a pullback in a bearish context.
+context:
+  preferred:
+    - bear_trend
+    - strong_bear_trend
+conditions:
+  pullback_required: true
+  attempt_number: 1
+entry:
+  type: stop
+  reference: signal_bar_low
+stop:
+  preferred: structural
+target:
+  configured_by_strategy: true
+failure:
+  - A new upward leg develops after the first attempt.
+notes:
+  - Documentation only; the Python L1L2Detector is the computational proxy.
+status: candidate
+implementation: brooks_trader.patterns.l1_l2.L1L2Detector

@@ -1,0 +1,17 @@
+name: Wedge
+category: three_push
+direction: both
+source:
+  book: Trading Price Action Reversals
+  chapter: Unverified
+  source_reference: Human verification required after local book ingestion
+definition: Candidate documentation for a three-push wedge structure.
+context: {}
+conditions: {}
+entry: {}
+stop: {}
+target: {}
+failure: []
+notes:
+  - Post-MVP pattern; no production detector is approved.
+status: candidate

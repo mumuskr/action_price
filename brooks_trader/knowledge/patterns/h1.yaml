@@ -1,0 +1,28 @@
+name: H1 Bull Flag
+category: first_entry
+direction: long
+source:
+  book: Trading Price Action Trends
+  chapter: Unverified
+  source_reference: Human verification required after local book ingestion
+definition: First upward attempt during a pullback in a bullish context.
+context:
+  preferred:
+    - bull_trend
+    - strong_bull_trend
+conditions:
+  pullback_required: true
+  attempt_number: 1
+entry:
+  type: stop
+  reference: signal_bar_high
+stop:
+  preferred: structural
+target:
+  configured_by_strategy: true
+failure:
+  - A new downward leg develops after the first attempt.
+notes:
+  - Documentation only; the Python H1H2Detector is the computational proxy.
+status: candidate
+implementation: brooks_trader.patterns.h1_h2.H1H2Detector

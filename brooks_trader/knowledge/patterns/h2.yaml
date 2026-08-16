@@ -1,0 +1,28 @@
+name: H2 Bull Flag
+category: second_entry
+direction: long
+source:
+  book: Trading Price Action Trends
+  chapter: "10 (user-provided reference; verify against local book)"
+  source_reference: Chapter reference supplied in project specification; quotation pending
+definition: Second upward attempt after a first attempt and a renewed pullback in bullish context.
+context:
+  preferred:
+    - bull_trend
+    - strong_bull_trend
+conditions:
+  pullback_required: true
+  second_attempt: true
+entry:
+  type: stop
+  reference: signal_bar_high
+stop:
+  preferred: structural
+target:
+  configured_by_strategy: true
+failure:
+  - Price reaches the structural invalidation before the configured target.
+notes:
+  - Documentation only; the Python H1H2Detector is the computational proxy.
+status: candidate
+implementation: brooks_trader.patterns.h1_h2.H1H2Detector

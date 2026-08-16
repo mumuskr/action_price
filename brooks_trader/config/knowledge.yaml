@@ -1,0 +1,12 @@
+chunk:
+  target_characters: 900
+  maximum_characters: 1400
+  overlap_paragraphs: 1
+
+embedding:
+  dimension: 1024
+  word_ngram_max: 2
+  character_ngram: 3
+
+retrieval:
+  default_top_k: 5

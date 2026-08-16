@@ -1,0 +1,66 @@
+[build-system]
+requires = ["hatchling>=1.25"]
+build-backend = "hatchling.build"
+
+[project]
+name = "brooks-trader"
+version = "0.10.1"
+description = "An explainable, bar-by-bar research system for computational approximations of Brooks price action."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { text = "Proprietary" }
+authors = [{ name = "Brooks Trader Contributors" }]
+dependencies = [
+    "duckdb>=1.1.0",
+    "exchange-calendars>=4.13.2,<5.0.0",
+    "ib_async>=2.1.0,<3.0.0",
+    "loguru>=0.7.2",
+    "numpy>=2.0.0",
+    "pandas>=2.2.2",
+    "pyarrow>=17.0.0",
+    "pydantic>=2.8.0",
+    "PyYAML>=6.0.2",
+]
+
+[project.optional-dependencies]
+research = [
+    "mplfinance>=0.12.10b0",
+    "polars>=1.5.0",
+]
+app = [
+    "fastapi>=0.115.0,<1.0.0",
+    "plotly>=5.24.0,<7.0.0",
+    "streamlit>=1.58.0,<2.0.0",
+    "uvicorn[standard]>=0.30.0,<1.0.0",
+]
+knowledge = [
+    "beautifulsoup4>=4.12.3,<5.0.0",
+    "ebooklib>=0.20,<0.21",
+    "faiss-cpu>=1.15.0,<2.0.0",
+]
+dev = [
+    "black>=24.8.0",
+    "pytest>=8.3.0",
+    "pytest-cov>=5.0.0",
+    "ruff>=0.6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/brooks_trader"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+
+[tool.pytest.ini_options]
+addopts = "-ra --strict-markers"
+pythonpath = ["src", "."]
+testpaths = ["tests"]

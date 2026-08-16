@@ -1,0 +1,31 @@
+defaults:
+  timezone: UTC
+  currency: USD
+  commission_per_trade: 0.0
+  slippage_ticks: 1
+
+markets:
+  ES:
+    description: E-mini S&P 500 futures
+    tick_size: 0.25
+    point_value: 50.0
+  MES:
+    description: Micro E-mini S&P 500 futures
+    tick_size: 0.25
+    point_value: 5.0
+  SPY:
+    description: SPDR S&P 500 ETF Trust
+    tick_size: 0.01
+    point_value: 1.0
+  QQQ:
+    description: Invesco QQQ Trust
+    tick_size: 0.01
+    point_value: 1.0
+  DIA:
+    description: SPDR Dow Jones Industrial Average ETF Trust
+    tick_size: 0.01
+    point_value: 1.0
+  IWM:
+    description: iShares Russell 2000 ETF
+    tick_size: 0.01
+    point_value: 1.0

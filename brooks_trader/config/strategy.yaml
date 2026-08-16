@@ -1,0 +1,110 @@
+strategy:
+  name: second_entry_with_trend
+  version: "0.7.0-phase7"
+
+bar:
+  doji_body_ratio: 0.20
+  strong_body_ratio: 0.65
+  strong_close_threshold: 0.75
+  minimum_range: 0.0
+
+swing:
+  confirmation_bars: 2
+
+trend:
+  ema_period: 20
+  ema_slope_lookback: 5
+  ema_distance_scale: 0.01
+  ema_slope_scale: 0.001
+  ema_distance_weight: 0.50
+  ema_slope_weight: 0.50
+  structure_lookback: 5
+  pressure_lookback: 10
+  overlap_lookback: 10
+  breakout_lookback: 10
+  strong_bull_threshold: 0.70
+  bull_threshold: 0.30
+  bear_threshold: -0.30
+  trading_range_threshold: 0.10
+  strong_bear_threshold: -0.70
+  always_in_score_threshold: 0.45
+  always_in_confirmation_bars: 2
+  component_weights:
+    ema: 0.20
+    structure: 0.25
+    pressure: 0.20
+    overlap: 0.15
+    breakout: 0.20
+
+patterns:
+  pullback_min_bars: 1
+  pullback_max_bars: 20
+  debug_transitions: true
+  quality_weights:
+    context: 0.50
+    signal_close: 0.30
+    directional_body: 0.20
+
+entry:
+  second_entries_only: true
+  order_type: stop
+
+setup:
+  minimum_pattern_score: 0.20
+  minimum_context_score: 0.30
+  minimum_signal_body_ratio: 0.20
+  minimum_signal_close_location: 0.55
+  minimum_directional_pressure: 0.0
+  maximum_pullback_depth_ranges: 8.0
+  context_lookback: 20
+  tight_range_lookback: 10
+  tight_range_min_overlap: 0.65
+  tight_range_max_span_ranges: 4.0
+  climax_lookback: 10
+  climax_min_trend_bars: 4
+  minimum_room_to_target_r: 1.0
+  reject_tight_trading_range: true
+  reject_recent_climax: true
+  reject_insufficient_room: true
+
+risk:
+  risk_per_trade: 0.005
+  stop_mode: structural
+  atr_period: 14
+  minimum_stop_atr: 0.25
+  maximum_stop_atr: 3.0
+
+exit:
+  mode: "2R"
+  reward_multiple: 2.0
+
+execution:
+  slippage_ticks: 1
+  commission_per_trade: 0.0
+  same_bar_stop_target_policy: adverse
+
+backtest:
+  initial_cash: 100000.0
+  allow_multiple_positions: false
+  pending_order_expiry_bars: 1
+  close_open_position_at_end: true
+
+statistics:
+  minimum_probability_sample: 30
+  signal_body_weight: 0.50
+  signal_close_weight: 0.50
+  signal_quality_weak_max: 0.50
+  signal_quality_strong_min: 0.75
+  ema_slope_flat_max: 0.00010
+  ema_slope_strong_min: 0.00050
+  volatility_low_max: 0.0025
+  volatility_high_min: 0.0075
+  session_timezone: America/New_York
+  regular_session_start: "09:30:00"
+  open_session_end: "10:30:00"
+  close_session_start: "15:00:00"
+  regular_session_end: "16:00:00"
+
+data:
+  duplicate_timestamp_policy: error
+  timezone: UTC

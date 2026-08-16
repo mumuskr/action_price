@@ -1,0 +1,17 @@
+name: Double Top
+category: reversal
+direction: short
+source:
+  book: Trading Price Action Reversals
+  chapter: Unverified
+  source_reference: Human verification required after local book ingestion
+definition: Candidate documentation for a double-top reversal pattern.
+context: {}
+conditions: {}
+entry: {}
+stop: {}
+target: {}
+failure: []
+notes:
+  - Post-MVP pattern; no production detector is approved.
+status: candidate

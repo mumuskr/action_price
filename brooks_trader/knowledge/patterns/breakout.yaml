@@ -1,0 +1,17 @@
+name: Breakout
+category: breakout
+direction: both
+source:
+  book: Trading Price Action Trading Ranges
+  chapter: Unverified
+  source_reference: Human verification required after local book ingestion
+definition: Candidate documentation for a breakout beyond a prior price structure.
+context: {}
+conditions: {}
+entry: {}
+stop: {}
+target: {}
+failure: []
+notes:
+  - Post-MVP pattern; no production detector is approved.
+status: candidate
