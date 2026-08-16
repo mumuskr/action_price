@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -47,6 +48,7 @@ from brooks_trader.strategy import (
     SetupEngineConfig,
     load_setup_engine_config,
 )
+from brooks_trader.strategy.catalog import StrategyModuleSelection
 
 
 class BacktestSettings(BaseModel):
@@ -144,6 +146,7 @@ class BacktestEngine:
         timeframe: str,
         strategy_path: str | Path,
         markets_path: str | Path,
+        module_overrides: Mapping[str, object] | StrategyModuleSelection | None = None,
     ) -> BacktestEngine:
         """Build all Phase 2-6 components from the versioned YAML configuration."""
         feature_config = load_bar_feature_config(strategy_path)
@@ -153,6 +156,7 @@ class BacktestEngine:
             strategy_path,
             markets_path,
             symbol=symbol,
+            module_overrides=module_overrides,
         )
         if len({context_version, pattern_version, setup_version}) != 1:
             raise ValueError("all engines must use the same strategy version")
@@ -173,10 +177,18 @@ class BacktestEngine:
             backtest_settings=BacktestSettings.model_validate(raw.get("backtest")),
         )
 
-    def run(self, frame: pd.DataFrame) -> BacktestResult:
+    def run(
+        self,
+        frame: pd.DataFrame,
+        *,
+        progress_callback: Callable[[int, int], None] | None = None,
+    ) -> BacktestResult:
         """Run an independent historical replay and return every audit artifact."""
         normalized = normalize_ohlcv(frame)
         bars = bars_from_frame(normalized)
+        total_bars = len(bars)
+        if progress_callback is not None:
+            progress_callback(0, total_bars)
         features = calculate_bar_features(normalized, config=self.feature_config)
         context_engine = MarketContextEngine(
             self.context_config,
@@ -224,6 +236,13 @@ class BacktestEngine:
             context = context_engine.update(feature)
             contexts.append(context)
             current_patterns = pattern_engine.update(bar, feature, context)
+            current_patterns = [
+                pattern
+                for pattern in current_patterns
+                if (pattern.pattern_type.value == "H2" and self.setup_config.modules.h2_with_trend)
+                or (pattern.pattern_type.value == "L2" and self.setup_config.modules.l2_with_trend)
+                or pattern.pattern_type.value not in {"H2", "L2"}
+            ]
             patterns.extend(current_patterns)
             for pattern in current_patterns:
                 evaluation = setup_engine.evaluate(
@@ -249,6 +268,8 @@ class BacktestEngine:
                         quantity=quantity,
                         submitted_index=bar_index,
                     )
+            if progress_callback is not None:
+                progress_callback(bar_index + 1, total_bars)
 
         if self.backtest_settings.close_open_position_at_end:
             self._consume_executions(

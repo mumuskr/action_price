@@ -18,6 +18,7 @@ import plotly.graph_objects as go  # noqa: E402
 import pyarrow as pa  # noqa: E402
 import streamlit as st  # noqa: E402
 
+from brooks_trader.backtest.runner import run_backtest_experiment  # noqa: E402
 from brooks_trader.backtest.trade_logger import TRADE_LOG_COLUMNS  # noqa: E402
 from brooks_trader.data import load_ohlcv, read_parquet_frame  # noqa: E402
 from brooks_trader.features import (  # noqa: E402
@@ -26,11 +27,17 @@ from brooks_trader.features import (  # noqa: E402
 )
 from brooks_trader.knowledge import FaissKnowledgeBase  # noqa: E402
 from brooks_trader.statistics.setup_stats import STATISTICS_COLUMNS  # noqa: E402
+from brooks_trader.strategy import (  # noqa: E402
+    ModuleStatus,
+    StrategyModuleSelection,
+    strategy_module_catalog,
+)
 
 DATA_ROOT = PROJECT_ROOT / "data" / "processed"
 BACKTEST_ROOT = PROJECT_ROOT / "data" / "backtests"
 KNOWLEDGE_INDEX = PROJECT_ROOT / "books" / "processed" / "faiss"
 STRATEGY_CONFIG = PROJECT_ROOT / "config" / "strategy.yaml"
+MARKETS_CONFIG = PROJECT_ROOT / "config" / "markets.yaml"
 
 PAGE_NAMES = (
     "Overview",
@@ -39,6 +46,7 @@ PAGE_NAMES = (
     "Trades",
     "Setup Statistics",
     "Brooks Explanation",
+    "Strategy Lab",
 )
 
 
@@ -53,6 +61,17 @@ class DatasetRef:
     @property
     def label(self) -> str:
         return f"{self.symbol} / {self.timeframe}"
+
+
+@dataclass(frozen=True)
+class BacktestArtifact:
+    """One selectable baseline or isolated experiment result."""
+
+    experiment_id: str
+    label: str
+    trade_path: Path
+    statistics_path: Path
+    metadata: dict[str, Any]
 
 
 def discover_bar_datasets(root: str | Path = DATA_ROOT) -> tuple[DatasetRef, ...]:
@@ -90,6 +109,48 @@ def statistics_path(
         / f"timeframe={timeframe}"
         / "setup_statistics.parquet"
     )
+
+
+def discover_backtest_artifacts(
+    symbol: str,
+    timeframe: str,
+    root: str | Path = BACKTEST_ROOT,
+) -> tuple[BacktestArtifact, ...]:
+    """Discover the default result and all isolated strategy experiments."""
+    partition = Path(root).expanduser() / f"symbol={symbol}" / f"timeframe={timeframe}"
+    artifacts: list[BacktestArtifact] = []
+    baseline_trade = partition / "trades.parquet"
+    baseline_stats = partition / "setup_statistics.parquet"
+    if baseline_trade.is_file() or baseline_stats.is_file():
+        artifacts.append(
+            BacktestArtifact(
+                experiment_id="baseline",
+                label="Default backtest",
+                trade_path=baseline_trade,
+                statistics_path=baseline_stats,
+                metadata={"experiment_id": "baseline", "label": "Default backtest"},
+            )
+        )
+    for metadata_path in sorted(partition.glob("experiment=*/metadata.json"), reverse=True):
+        try:
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(metadata, dict):
+            continue
+        experiment_id = str(metadata.get("experiment_id") or metadata_path.parent.name)
+        label = str(metadata.get("label") or experiment_id)
+        artifacts.append(
+            BacktestArtifact(
+                experiment_id=experiment_id,
+                label=f"{label} | {experiment_id}",
+                trade_path=metadata_path.parent / str(metadata.get("trade_path", "trades.parquet")),
+                statistics_path=metadata_path.parent
+                / str(metadata.get("statistics_path", "setup_statistics.parquet")),
+                metadata=metadata,
+            )
+        )
+    return tuple(artifacts)
 
 
 @st.cache_data(show_spinner=False)
@@ -153,6 +214,9 @@ def main() -> None:
         initial_sidebar_state="expanded",
     )
     _apply_styles()
+    last_experiment = st.session_state.pop("last_experiment_message", None)
+    if last_experiment:
+        st.sidebar.success(last_experiment)
     datasets = discover_bar_datasets()
     st.sidebar.title("Brooks Trader")
     st.sidebar.caption("Historical research dashboard | read-only")
@@ -168,16 +232,16 @@ def main() -> None:
         return
 
     selected_dataset = _select_dataset(datasets)
+    selected_artifact = _select_backtest_artifact(selected_dataset)
+    st.sidebar.caption(f"Result: {selected_artifact.label}")
     bars = load_bars(str(selected_dataset.path))
-    trades = load_trade_log(
-        str(trade_log_path(selected_dataset.symbol, selected_dataset.timeframe))
-    )
-    statistics = load_statistics(
-        str(statistics_path(selected_dataset.symbol, selected_dataset.timeframe))
-    )
+    trades = load_trade_log(str(selected_artifact.trade_path))
+    statistics = load_statistics(str(selected_artifact.statistics_path))
     selected_trade = _select_trade(trades, page)
 
-    if page == "Overview":
+    if page == "Strategy Lab":
+        render_strategy_lab(selected_dataset)
+    elif page == "Overview":
         render_overview(selected_dataset, bars, trades, statistics)
     elif page == "Chart":
         features = load_features(str(selected_dataset.path), str(STRATEGY_CONFIG))
@@ -244,6 +308,141 @@ def render_overview(
         performance["cumulative_pnl"] = completed["pnl"].cumsum().to_numpy()
         st.line_chart(performance.set_index("entry_time")["cumulative_pnl"])
         st.dataframe(performance.tail(20), hide_index=True, width="stretch")
+
+
+def render_strategy_lab(dataset: DatasetRef) -> None:
+    """Render transparent module selection and run one isolated experiment."""
+    st.title("Strategy Lab")
+    st.caption(f"{dataset.label} | experiment artifacts are saved separately")
+
+    fields = set(StrategyModuleSelection.model_fields)
+    current_defaults = StrategyModuleSelection()
+    modules = strategy_module_catalog()
+    selectable_modules = [
+        module
+        for module in modules
+        if module.id in fields and module.status != ModuleStatus.PLANNED
+    ]
+    selectable_ids = tuple(module.id for module in selectable_modules)
+    for module in modules:
+        widget_key = f"strategy_module_{module.id}"
+        if widget_key in st.session_state:
+            continue
+        st.session_state[widget_key] = (
+            getattr(current_defaults, module.id, module.default_enabled)
+            if module.id in fields
+            else False
+        )
+
+    select_all, clear_all, _spacer = st.columns([1, 1, 6])
+    select_all.button(
+        "全部勾选",
+        width="stretch",
+        on_click=_set_strategy_module_widgets,
+        args=(selectable_ids, True),
+    )
+    clear_all.button(
+        "取消全选",
+        width="stretch",
+        on_click=_set_strategy_module_widgets,
+        args=(selectable_ids, False),
+    )
+    selected_count = sum(
+        bool(st.session_state[f"strategy_module_{module_id}"]) for module_id in selectable_ids
+    )
+    st.caption(
+        f"已选择 {selected_count} / {len(selectable_ids)} 个可运行模块; "
+        "尚未接入回测的计划模块保持禁用。"
+    )
+
+    st.subheader("回测设置")
+    experiment_column, replay_column = st.columns(2)
+    experiment_label = experiment_column.text_input("实验名称", value="")
+    replay_limit = int(
+        replay_column.number_input(
+            "回放 K 线数 (0 = 全部数据)",
+            min_value=0,
+            max_value=2_000_000,
+            value=0,
+            step=1_000,
+        )
+    )
+    run_requested = st.button("运行回测", type="primary")
+    progress_placeholder = st.empty()
+    st.divider()
+
+    selection_values: dict[str, bool] = {}
+    for category in dict.fromkeys(module.category for module in modules):
+        st.subheader(category)
+        for module in [item for item in modules if item.category == category]:
+            widget_key = f"strategy_module_{module.id}"
+            enabled = st.checkbox(
+                module.name,
+                value=False,
+                disabled=module.status == ModuleStatus.PLANNED,
+                key=widget_key,
+            )
+            if module.id in fields:
+                selection_values[module.id] = enabled
+            status = module.status.value
+            with st.expander(f"{module.name} | {status}"):
+                st.write(module.description)
+                st.caption(f"Book concept: {module.book_concept}")
+                st.write(module.interpretation)
+                source = PROJECT_ROOT / module.code_path
+                st.caption(f"Code: {module.code_path}")
+                if source.is_file():
+                    st.code(source.read_text(encoding="utf-8"), language="python")
+                else:
+                    st.warning("Implementation file not found.")
+
+    if not run_requested:
+        return
+
+    selection = StrategyModuleSelection.model_validate(selection_values)
+    progress = progress_placeholder.progress(0, text="正在准备回测...")
+    last_percent = -1
+
+    def update_progress(completed: int, total: int) -> None:
+        nonlocal last_percent
+        percent = round((completed / total) * 90) if total else 90
+        if percent == last_percent:
+            return
+        last_percent = percent
+        progress.progress(
+            percent,
+            text=f"正在运行回测: {completed:,} / {total:,} 根 K 线",
+        )
+
+    try:
+        _, _destination, metadata = run_backtest_experiment(
+            symbol=dataset.symbol,
+            timeframe=dataset.timeframe,
+            strategy_path=STRATEGY_CONFIG,
+            markets_path=MARKETS_CONFIG,
+            output_root=BACKTEST_ROOT,
+            module_selection=selection,
+            limit=replay_limit or None,
+            label=experiment_label,
+            progress_callback=update_progress,
+        )
+        progress.progress(100, text="回测完成, 结果已保存。")
+    except Exception as error:  # pragma: no cover - rendered by Streamlit
+        st.error(f"Backtest failed: {error}")
+        return
+
+    st.session_state[f"selected_artifact:{dataset.label}"] = metadata["experiment_id"]
+    st.session_state["last_experiment_message"] = (
+        f"Experiment saved: {metadata['experiment_id']} ({metadata['trades']} trades)"
+    )
+    st.session_state.pop("strategy_module_run", None)
+    st.rerun()
+
+
+def _set_strategy_module_widgets(module_ids: tuple[str, ...], enabled: bool) -> None:
+    """Set all executable strategy checkbox states before Streamlit renders them."""
+    for module_id in module_ids:
+        st.session_state[f"strategy_module_{module_id}"] = enabled
 
 
 def render_chart(
@@ -519,6 +718,41 @@ def _select_dataset(datasets: tuple[DatasetRef, ...]) -> DatasetRef:
     labels = [dataset.label for dataset in datasets]
     selected_label = st.sidebar.selectbox("Dataset", labels)
     return datasets[labels.index(selected_label)]
+
+
+def _select_backtest_artifact(dataset: DatasetRef) -> BacktestArtifact:
+    artifacts = discover_backtest_artifacts(dataset.symbol, dataset.timeframe)
+    if not artifacts:
+        return BacktestArtifact(
+            experiment_id="none",
+            label="No backtest",
+            trade_path=trade_log_path(dataset.symbol, dataset.timeframe),
+            statistics_path=statistics_path(dataset.symbol, dataset.timeframe),
+            metadata={},
+        )
+    labels = [artifact.label for artifact in artifacts]
+    state_key = f"selected_artifact:{dataset.label}"
+    selected_id = st.session_state.get(state_key)
+    index = next(
+        (
+            position
+            for position, artifact in enumerate(artifacts)
+            if artifact.experiment_id == selected_id
+        ),
+        0,
+    )
+    widget_key = f"backtest_result_{dataset.symbol}_{dataset.timeframe}"
+    if selected_id is not None and index < len(labels):
+        st.session_state[widget_key] = labels[index]
+    selected_label = st.sidebar.selectbox(
+        "Backtest result",
+        labels,
+        index=index,
+        key=widget_key,
+    )
+    selected = artifacts[labels.index(selected_label)]
+    st.session_state[state_key] = selected.experiment_id
+    return selected
 
 
 def _select_trade(trades: pd.DataFrame, page: str) -> pd.Series | None:

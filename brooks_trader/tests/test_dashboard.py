@@ -11,6 +11,7 @@ import pytest
 from dashboard.app import (
     _require_system_arrow_memory_pool,
     build_price_chart,
+    discover_backtest_artifacts,
     discover_bar_datasets,
     load_statistics,
     load_trade_log,
@@ -54,6 +55,43 @@ def test_dashboard_bootstraps_source_import_path() -> None:
     assert result.stdout.strip() == "0.10.1"
 
 
+def test_strategy_lab_bulk_selection_keeps_run_button_visible() -> None:
+    environment = os.environ.copy()
+    environment["ARROW_DEFAULT_MEMORY_POOL"] = "system"
+    program = """
+from streamlit.testing.v1 import AppTest
+
+app = AppTest.from_file("dashboard/app.py", default_timeout=30).run()
+app.sidebar.radio[0].set_value("Strategy Lab").run()
+buttons = {button.label: button for button in app.button}
+assert {"全部勾选", "取消全选", "运行回测"} <= set(buttons)
+
+buttons["取消全选"].click().run()
+selectable = [checkbox for checkbox in app.checkbox if not checkbox.disabled]
+assert selectable and not any(checkbox.value for checkbox in selectable)
+assert any(button.label == "运行回测" for button in app.button)
+
+buttons = {button.label: button for button in app.button}
+buttons["全部勾选"].click().run()
+selectable = [checkbox for checkbox in app.checkbox if not checkbox.disabled]
+assert all(checkbox.value for checkbox in selectable)
+assert any(button.label == "运行回测" for button in app.button)
+print("strategy-controls-ok")
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", program],
+        cwd=PROJECT_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "strategy-controls-ok"
+
+
 def test_discover_bar_datasets_finds_only_canonical_partitions(tmp_path: Path) -> None:
     canonical = tmp_path / "symbol=SPY" / "timeframe=5m" / "bars.parquet"
     canonical.parent.mkdir(parents=True)
@@ -79,6 +117,24 @@ def test_standard_artifact_paths_are_partitioned() -> None:
     assert trade_log_path("SPY", "5m", "/tmp/backtests") == Path(
         "/tmp/backtests/symbol=SPY/timeframe=5m/trades.parquet"
     )
+
+
+def test_discover_backtest_artifacts_includes_isolated_experiments(tmp_path: Path) -> None:
+    partition = tmp_path / "symbol=SPY" / "timeframe=5m"
+    experiment = partition / "experiment=demo"
+    experiment.mkdir(parents=True)
+    (experiment / "trades.parquet").touch()
+    (experiment / "setup_statistics.parquet").touch()
+    (experiment / "metadata.json").write_text(
+        '{"experiment_id":"demo","label":"H2 test"}',
+        encoding="utf-8",
+    )
+
+    artifacts = discover_backtest_artifacts("SPY", "5m", tmp_path)
+
+    assert len(artifacts) == 1
+    assert artifacts[0].experiment_id == "demo"
+    assert artifacts[0].label == "H2 test | demo"
     assert statistics_path("SPY", "5m", "/tmp/backtests") == Path(
         "/tmp/backtests/symbol=SPY/timeframe=5m/setup_statistics.parquet"
     )

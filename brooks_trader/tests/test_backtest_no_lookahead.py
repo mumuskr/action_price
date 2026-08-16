@@ -342,3 +342,22 @@ def test_changing_future_bars_does_not_change_past_pipeline_artifacts() -> None:
     assert tuple(signal for signal in full.signals if signal.signal_bar_index < split) == (
         prefix.signals
     )
+
+
+def test_backtest_reports_bar_replay_progress() -> None:
+    frame = pd.read_parquet(
+        PROJECT_ROOT / "data/processed/symbol=SPY/timeframe=5m/bars.parquet"
+    ).iloc[:25]
+    engine = BacktestEngine.from_config(
+        symbol="SPY",
+        timeframe="5m",
+        strategy_path=STRATEGY_PATH,
+        markets_path=MARKETS_PATH,
+    )
+    updates: list[tuple[int, int]] = []
+
+    engine.run(frame, progress_callback=lambda completed, total: updates.append((completed, total)))
+
+    assert updates[0] == (0, 25)
+    assert updates[-1] == (25, 25)
+    assert updates == [(completed, 25) for completed in range(26)]

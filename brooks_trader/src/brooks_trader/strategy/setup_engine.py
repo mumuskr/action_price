@@ -20,6 +20,7 @@ from brooks_trader.models import (
     SetupType,
     TradeSetup,
 )
+from brooks_trader.strategy.catalog import StrategyModuleSelection
 
 
 class SetupConfig(BaseModel):
@@ -96,6 +97,7 @@ class SetupEngineConfig(BaseModel):
     risk: RiskConfig
     exit: ExitConfig
     market: MarketExecutionConfig
+    modules: StrategyModuleSelection = Field(default_factory=StrategyModuleSelection)
 
 
 def load_setup_engine_config(
@@ -103,6 +105,7 @@ def load_setup_engine_config(
     markets_path: str | Path,
     *,
     symbol: str,
+    module_overrides: Mapping[str, Any] | StrategyModuleSelection | None = None,
 ) -> tuple[SetupEngineConfig, str]:
     """Load Phase 5 settings and one market's tick size."""
     strategy_raw = _read_mapping(strategy_path)
@@ -116,6 +119,15 @@ def load_setup_engine_config(
     version = strategy.get("version")
     if not isinstance(version, str) or not version.strip():
         raise ValueError("strategy.version must be a non-empty string")
+    raw_modules = strategy_raw.get("modules")
+    if not isinstance(raw_modules, Mapping):
+        raw_modules = {}
+    override_values = (
+        module_overrides.model_dump()
+        if isinstance(module_overrides, StrategyModuleSelection)
+        else module_overrides
+    )
+    modules = StrategyModuleSelection.from_values(raw_modules, overrides=override_values)
     return (
         SetupEngineConfig.model_validate(
             {
@@ -128,6 +140,7 @@ def load_setup_engine_config(
                     "tick_size": market.get("tick_size"),
                     "point_value": market.get("point_value"),
                 },
+                "modules": modules,
             }
         ),
         version,
@@ -168,43 +181,67 @@ class SetupEngine:
         expected_setup = (
             SetupType.H2_WITH_TREND if direction == Direction.LONG else SetupType.L2_WITH_TREND
         )
+        direction_module_enabled = (
+            self.config.modules.h2_with_trend
+            if direction == Direction.LONG
+            else self.config.modules.l2_with_trend
+        )
+        if not direction_module_enabled:
+            rejections.append("strategy_module_disabled")
         if pattern.pattern_type != expected_pattern:
             rejections.append("second_entry_pattern_required")
-        if not _regime_with_direction(context, direction):
+        if self.config.modules.market_regime_filter and not _regime_with_direction(
+            context, direction
+        ):
             rejections.append("market_regime_not_with_trend")
-        if not _ema_with_direction(signal_feature, direction):
+        if self.config.modules.ema_alignment_filter and not _ema_with_direction(
+            signal_feature, direction
+        ):
             rejections.append("ema_not_aligned")
-        if pattern.confidence_score < self.config.setup.minimum_pattern_score:
+        if (
+            self.config.modules.pattern_quality_filter
+            and pattern.confidence_score < self.config.setup.minimum_pattern_score
+        ):
             rejections.append("pattern_quality_below_minimum")
-        context_score = _directional_value(context.trend_score, direction)
-        if context_score < self.config.setup.minimum_context_score:
+        raw_context_score = _directional_value(context.trend_score, direction)
+        context_score = max(0.0, min(1.0, raw_context_score))
+        if (
+            self.config.modules.context_quality_filter
+            and raw_context_score < self.config.setup.minimum_context_score
+        ):
             rejections.append("context_score_below_minimum")
 
-        if float(signal_feature["body_ratio"]) < self.config.setup.minimum_signal_body_ratio:
-            rejections.append("signal_bar_body_too_small")
-        if not _signal_close_is_acceptable(signal_feature, direction, self.config.setup):
-            rejections.append("signal_bar_close_too_weak")
+        if self.config.modules.signal_bar_filter:
+            if float(signal_feature["body_ratio"]) < self.config.setup.minimum_signal_body_ratio:
+                rejections.append("signal_bar_body_too_small")
+            if not _signal_close_is_acceptable(signal_feature, direction, self.config.setup):
+                rejections.append("signal_bar_close_too_weak")
         if not _directional_bar(signal_feature, direction):
             warnings.append("signal_bar_not_directional")
-        if _directional_value(context.pressure_score, direction) < (
-            self.config.setup.minimum_directional_pressure
+        if (
+            self.config.modules.pressure_filter
+            and _directional_value(context.pressure_score, direction)
+            < self.config.setup.minimum_directional_pressure
         ):
             rejections.append("opposite_or_insufficient_pressure")
 
         pullback = known_bars[pattern.start_index : signal_index + 1]
         pullback_depth, average_range = _pullback_depth_in_ranges(pullback)
-        if pullback_depth > self.config.setup.maximum_pullback_depth_ranges:
+        if (
+            self.config.modules.pullback_depth_filter
+            and pullback_depth > self.config.setup.maximum_pullback_depth_ranges
+        ):
             rejections.append("pullback_too_deep")
 
         tight_range = _is_tight_trading_range(known_bars, known_features, self.config.setup)
-        if tight_range:
+        if tight_range and self.config.modules.tight_trading_range_filter:
             if self.config.setup.reject_tight_trading_range:
                 rejections.append("tight_trading_range")
             else:
                 warnings.append("tight_trading_range")
 
         recent_climax = _has_recent_climax(known_features, direction, self.config.setup)
-        if recent_climax:
+        if recent_climax and self.config.modules.recent_climax_filter:
             if self.config.setup.reject_recent_climax:
                 rejections.append("recent_climax")
             else:
@@ -230,7 +267,11 @@ class SetupEngine:
             direction,
             self.config.setup.context_lookback,
         )
-        if room_r is not None and room_r < self.config.setup.minimum_room_to_target_r:
+        if (
+            self.config.modules.room_to_target_filter
+            and room_r is not None
+            and room_r < self.config.setup.minimum_room_to_target_r
+        ):
             if self.config.setup.reject_insufficient_room:
                 rejections.append("insufficient_room_to_target")
             else:
@@ -249,6 +290,7 @@ class SetupEngine:
             "room_to_target_r": room_r,
             "signal_body_ratio": float(signal_feature["body_ratio"]),
             "signal_close_location": float(signal_feature["close_location"]),
+            "raw_context_score": raw_context_score,
             "ema_slope_ratio": _ema_slope_ratio(signal_feature),
             "volatility_range_ratio": _recent_average_range_ratio(
                 known_bars,
@@ -268,14 +310,32 @@ class SetupEngine:
                 strategy_version=self.strategy_version,
             )
 
-        reasons.extend(
-            [
-                "second_entry_pattern",
-                "market_regime_with_trend",
-                "ema_aligned",
-                "context_and_pattern_quality_accepted",
-            ]
-        )
+        reasons.append("second_entry_pattern")
+        if self.config.modules.market_regime_filter:
+            reasons.append("market_regime_with_trend")
+        if self.config.modules.ema_alignment_filter:
+            reasons.append("ema_aligned")
+        if (
+            self.config.modules.pattern_quality_filter
+            and self.config.modules.context_quality_filter
+        ):
+            reasons.append("context_and_pattern_quality_accepted")
+        elif self.config.modules.pattern_quality_filter:
+            reasons.append("pattern_quality_accepted")
+        elif self.config.modules.context_quality_filter:
+            reasons.append("context_quality_accepted")
+        if self.config.modules.signal_bar_filter:
+            reasons.append("signal_bar_quality_accepted")
+        if self.config.modules.pressure_filter:
+            reasons.append("directional_pressure_accepted")
+        if self.config.modules.pullback_depth_filter:
+            reasons.append("pullback_depth_accepted")
+        if self.config.modules.tight_trading_range_filter:
+            reasons.append("trading_range_filter_passed")
+        if self.config.modules.recent_climax_filter:
+            reasons.append("climax_filter_passed")
+        if self.config.modules.room_to_target_filter:
+            reasons.append("room_to_target_accepted")
         setup = TradeSetup(
             setup_type=expected_setup,
             direction=direction,

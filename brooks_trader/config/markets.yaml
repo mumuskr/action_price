@@ -17,6 +17,10 @@ markets:
     description: SPDR S&P 500 ETF Trust
     tick_size: 0.01
     point_value: 1.0
+  AAPL:
+    description: Apple Inc. common stock
+    tick_size: 0.01
+    point_value: 1.0
   QQQ:
     description: Invesco QQQ Trust
     tick_size: 0.01

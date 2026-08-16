@@ -17,6 +17,7 @@ from brooks_trader.backtest.engine import (
 )
 from brooks_trader.backtest.metrics import BacktestMetrics, calculate_backtest_metrics
 from brooks_trader.backtest.portfolio import Portfolio, PortfolioSnapshot
+from brooks_trader.backtest.runner import run_backtest_experiment
 from brooks_trader.backtest.trade_logger import trades_to_frame, write_trade_log
 
 __all__ = [
@@ -35,6 +36,7 @@ __all__ = [
     "PortfolioSnapshot",
     "RiskSettings",
     "calculate_backtest_metrics",
+    "run_backtest_experiment",
     "trades_to_frame",
     "write_trade_log",
 ]

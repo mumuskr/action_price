@@ -354,15 +354,49 @@ The launcher selects Arrow's system memory allocator before Streamlit starts. Th
 required on macOS ARM because Arrow's default mimalloc backend can crash when Streamlit
 serializes a large DataFrame from its worker thread.
 
-The sidebar selects a canonical processed dataset under `data/processed/`. The Dashboard
-loads OHLCV and Parquet artifacts only; it never submits orders, runs a strategy, or changes
-the saved backtest. `Overview` shows data coverage and completed-trade performance.
+The sidebar selects a canonical processed dataset under `data/processed/`. The result pages
+load OHLCV and Parquet artifacts only; they never submit orders or change a saved backtest.
+`Strategy Lab` is the explicit exception: it runs a selected historical experiment and
+writes a new isolated artifact. `Overview` shows data coverage and completed-trade performance.
 `Chart` calculates causal EMA20 features and marks saved trade entries and pattern bars.
 `Executed Signals` lists signals that became completed trades; the current trade log does
 not include rejected setups or unfilled/expired signals. `Trades` exposes the stored market
 state and pattern metadata. `Setup Statistics` displays only empirical aggregates already
 written by the statistics engine. `Brooks Explanation` retrieves passages from the local
 FAISS index and shows the authoritative input boundary for the separate `LLMExplainer`.
+
+### Run a strategy experiment
+
+The `Strategy Lab` view exposes the executable strategy modules separately. Each module
+shows its Brooks concept, the project's computational interpretation, implementation
+status, and source file. `implemented` modules can be switched off before running an
+experiment; `planned` modules are visible but disabled until their detector is connected
+to the backtest pipeline.
+
+Every dashboard run is saved under a unique experiment partition:
+
+```text
+data/backtests/symbol=SPY/timeframe=5m/experiment=<id>/
+```
+
+The partition contains `trades.parquet`, `setup_statistics.parquet`, and `metadata.json`
+with the selected modules, configuration paths, metrics, and run counts. The sidebar's
+`Backtest result` selector lets the read-only pages inspect the default artifact or any
+saved experiment without overwriting earlier results.
+
+The CLI uses the same module contract when a quick comparison is useful:
+
+```bash
+python scripts/run_backtest.py \
+  --symbol SPY \
+  --timeframe 5m \
+  --disable-module ema_alignment_filter \
+  --disable-module tight_trading_range_filter
+```
+
+Module definitions are cataloged in `src/brooks_trader/strategy/catalog.py`. A module's
+description is intentionally separate from its implementation: book concepts, subjective
+interpretations, and project-specific thresholds are not presented as the same thing.
 
 ## Quality checks
 

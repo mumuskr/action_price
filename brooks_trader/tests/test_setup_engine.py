@@ -227,6 +227,27 @@ def test_quality_ema_and_pressure_failures_remain_auditable() -> None:
     assert evaluation.metadata["probability_win"] is None
 
 
+def test_disabling_context_filter_keeps_direction_score_valid() -> None:
+    bars, features, contexts, pattern = make_history(Direction.LONG)
+    config, version = load_setup_engine_config(
+        STRATEGY_PATH,
+        MARKETS_PATH,
+        symbol="SPY",
+        module_overrides={"context_quality_filter": False, "pressure_filter": False},
+    )
+    contexts[-1] = contexts[-1].model_copy(update={"trend_score": -0.02, "pressure_score": 0.5})
+    pattern = pattern.model_copy(update={"context": contexts[-1]})
+
+    evaluation = SetupEngine(config, strategy_version=version).evaluate(
+        pattern, bars, features, contexts
+    )
+
+    assert evaluation.accepted
+    assert evaluation.setup is not None
+    assert evaluation.setup.context_score == 0
+    assert evaluation.setup.metadata["raw_context_score"] == -0.02
+
+
 def test_exit_mode_and_reward_multiple_cannot_disagree() -> None:
     try:
         ExitConfig(mode="2R", reward_multiple=1.0)

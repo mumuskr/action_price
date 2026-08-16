@@ -2,6 +2,8 @@ from pathlib import Path
 
 import yaml
 
+from brooks_trader.strategy import StrategyModuleSelection
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -28,3 +30,14 @@ def test_every_configured_market_has_positive_tick_size() -> None:
 
     assert config["markets"]
     assert all(market["tick_size"] > 0 for market in config["markets"].values())
+
+
+def test_strategy_module_selection_defaults_preserve_current_pipeline() -> None:
+    selection = StrategyModuleSelection.from_values(
+        {"ema_alignment_filter": True},
+        overrides={"ema_alignment_filter": False},
+    )
+
+    assert selection.ema_alignment_filter is False
+    assert selection.h2_with_trend is True
+    assert "h2_with_trend" in selection.enabled_ids()

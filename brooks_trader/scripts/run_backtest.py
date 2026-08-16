@@ -21,6 +21,7 @@ from brooks_trader.statistics import (  # noqa: E402
     load_setup_statistics_config,
     write_setup_statistics,
 )
+from brooks_trader.strategy import StrategyModuleSelection  # noqa: E402
 
 
 def parse_args() -> argparse.Namespace:
@@ -57,6 +58,13 @@ def parse_args() -> argparse.Namespace:
         type=int,
         help="Replay only the first N bars; useful for a quick verification run",
     )
+    parser.add_argument(
+        "--disable-module",
+        action="append",
+        choices=tuple(StrategyModuleSelection.model_fields),
+        default=[],
+        help="Disable one executable strategy module; repeat to disable several",
+    )
     return parser.parse_args()
 
 
@@ -77,11 +85,13 @@ def main() -> None:
     frame = load_ohlcv(source)
     if args.limit is not None:
         frame = frame.iloc[: args.limit].copy()
+    module_overrides = {module_id: False for module_id in args.disable_module}
     engine = BacktestEngine.from_config(
         symbol=symbol,
         timeframe=timeframe,
         strategy_path=args.strategy_config,
         markets_path=args.markets_config,
+        module_overrides=module_overrides,
     )
     result = engine.run(frame)
     write_trade_log(list(result.trades), destination)
